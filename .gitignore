@@ -1,0 +1,7 @@
+/logs
+/target
+.classpath
+.project
+.log
+/.idea/
+/activiti-service.iml
