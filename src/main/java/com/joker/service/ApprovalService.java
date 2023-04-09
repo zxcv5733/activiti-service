@@ -1,13 +1,17 @@
 package com.joker.service;
 
+import com.joker.dto.ApprovalDTO;
+
 /**
  * @author: Li dong
  * @date: 2023/4/8 14:32
  * @description:
  */
 public interface ApprovalService {
+
     /**
-     * 添加审批
+     * 审批
+     * @param approvalDto
      */
-    void add();
+    void approval(ApprovalDTO approvalDto);
 }

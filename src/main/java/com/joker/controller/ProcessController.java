@@ -1,14 +1,20 @@
 package com.joker.controller;
 
+import cn.hutool.core.util.IdUtil;
+import com.joker.dto.DeploymentDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.activiti.engine.RepositoryService;
+import org.activiti.engine.RuntimeService;
+import org.activiti.engine.impl.persistence.entity.DeploymentEntityImpl;
+import org.activiti.engine.impl.persistence.entity.ProcessDefinitionEntityImpl;
 import org.activiti.engine.repository.Deployment;
 import org.activiti.engine.repository.ProcessDefinition;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RestController;
-
+import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * @author: Li dong
@@ -22,36 +28,63 @@ public class ProcessController {
     @Resource
     private RepositoryService repositoryService;
 
+    @Resource
+    private RuntimeService runtimeService;
+
+
 
     /**
      * 删除流程定义信息
-     * @param processDefinitionKey
+     * @param processDefinitionId
+     * @return
      */
-    @GetMapping("/deleteProcessDefinition/{processDefinitionKey}")
-    public String deleteProcessDefinition(@PathVariable String processDefinitionKey){
+    @DeleteMapping("/deleteProcessDefinition/{processDefinitionId}")
+    public String deleteProcessDefinition(@PathVariable String processDefinitionId){
         ProcessDefinition processDefinition = repositoryService.createProcessDefinitionQuery()
-                .processDefinitionKey(processDefinitionKey)
+                .processDefinitionId(processDefinitionId)
                 .singleResult();
-        String processDefinitionId = processDefinition.getId();
-        log.info("流程定义ID: " + processDefinition.getId());
+        // 流程定义所属部署id
+        String deploymentId = processDefinition.getDeploymentId();
+        log.info("删除-流程定义ID: {}", deploymentId);
         // 删除流程部署ID, 参数加true可以联级删除
-        repositoryService.deleteDeployment(processDefinitionId, true);
+        repositoryService.deleteDeployment(deploymentId);
         return processDefinitionId;
     }
 
     /**
      * 创建流程实例
-     * @param name
+     * @param deploymentDto
      * @return
      */
-    @GetMapping("/createDeployment/{name}")
-    public String createDeployment(@PathVariable String name){
+    @PostMapping("/createDeployment")
+    public String createDeployment(@RequestBody DeploymentDTO deploymentDto){
         Deployment deployment = repositoryService.createDeployment()
-                .addClasspathResource("bpmn/" + name + ".bpmn")
-                .name(name)
+                .addClasspathResource("bpmn/" + deploymentDto.getId() + ".bpmn")
+                .name(deploymentDto.getName())
                 .deploy();
-        String deploymentId = deployment.getId();
-        log.info("流程实例ID: " + deploymentId);
-        return deploymentId;
+        System.out.println(deployment);
+        List<ProcessDefinitionEntityImpl> deployedArtifacts = ((DeploymentEntityImpl) deployment).getDeployedArtifacts(ProcessDefinitionEntityImpl.class);
+        Optional<ProcessDefinitionEntityImpl> optional = deployedArtifacts.stream().findFirst();
+        String processDefinitionId = null;
+        if (optional.isPresent()){
+            processDefinitionId = optional.get().getId();
+        }
+        log.info("创建-流程实例ID: {}", processDefinitionId);
+        return processDefinitionId;
+    }
+
+    /**
+     * 开启流程实例
+     * @param processDefinitionId
+     * @return
+     */
+    @GetMapping("/startProcessInstance/{processDefinitionId}")
+    public String startProcessInstance(@PathVariable String processDefinitionId){
+        String businessKey = IdUtil.getSnowflakeNextIdStr();
+        Map<String, Object> variables = new HashMap<>(1);
+        variables.put("zhangsan", "lisi");
+        runtimeService.startProcessInstanceById(processDefinitionId, businessKey, variables);
+        log.info("开启-流程业务ID: {}", businessKey);
+        return businessKey;
     }
 }
