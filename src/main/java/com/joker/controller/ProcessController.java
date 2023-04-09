@@ -62,7 +62,6 @@ public class ProcessController {
                 .addClasspathResource("bpmn/" + deploymentDto.getId() + ".bpmn")
                 .name(deploymentDto.getName())
                 .deploy();
-        System.out.println(deployment);
         List<ProcessDefinitionEntityImpl> deployedArtifacts = ((DeploymentEntityImpl) deployment).getDeployedArtifacts(ProcessDefinitionEntityImpl.class);
         Optional<ProcessDefinitionEntityImpl> optional = deployedArtifacts.stream().findFirst();
         String processDefinitionId = null;

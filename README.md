@@ -97,3 +97,35 @@ https://gitee.com/SweetLei/activiti-bpmn-tool
 https://blog.csdn.net/sihai12345/article/details/128349463
 ```
 
+#### 查询任务代办列表报错
+
+I would like to get the active Tasks List , using:
+
+```java
+return processEngine.getTaskService().createTaskQuery().active().list();
+```
+
+but I have this error:
+
+```java
+10:05:37.238 [http-nio-1061-exec-18] ERROR e.e.e.o.k.f.c.s.ControllerAdvice - Could not write JSON: lazy loading outside command context; nested exception is com.fasterxml.jackson.databind.JsonMappingException: lazy loading outside command context (through reference chain: java.util.ArrayList[0]->org.activiti.engine.impl.persistence.entity.TaskEntityImpl["variableInstances"])
+```
+
+解决方法:
+
+```java
+public List<Map<String, Object>> getTaskList() {
+List<Tasks> taskList = gprocessEngine.getTaskService().createTaskQuery().active().list();
+
+    List<Map<String, Object>> customTaskList = new ArrayList<>();
+        for (Task task : taskList) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("taskId", task.getId());
+            map.put("taskDefinitionKey", task.getTaskDefinitionKey());
+            map.put("taskName", task.getName());
+    
+            customTaskList.add(map);
+        }
+        return customTaskList;
+```
+

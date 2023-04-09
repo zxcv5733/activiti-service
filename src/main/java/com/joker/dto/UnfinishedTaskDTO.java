@@ -8,13 +8,13 @@ import java.io.Serializable;
 
 /**
  * @author: Li dong
- * @date: 2023/4/8 21:03
+ * @date: 2023/4/9 20:31
  * @description:
  */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class ApprovalDTO implements Serializable {
+public class UnfinishedTaskDTO implements Serializable {
     /**
      * 受理人
      */
@@ -24,9 +24,4 @@ public class ApprovalDTO implements Serializable {
      * 业务ID
      */
     private String businessKey;
-
-    /**
-     * 评审备注
-     */
-    private String remarks;
 }
