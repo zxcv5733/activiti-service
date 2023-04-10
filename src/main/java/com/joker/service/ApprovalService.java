@@ -1,10 +1,10 @@
 package com.joker.service;
 
 import com.joker.dto.ApprovalDTO;
+import com.joker.dto.TimeLineDTO;
 import com.joker.dto.UnfinishedTaskDTO;
-import org.activiti.engine.task.Task;
-
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author: Li dong
@@ -24,5 +24,12 @@ public interface ApprovalService {
      * @param unfinishedTaskDto
      * @return
      */
-    Object unfinishedTask(UnfinishedTaskDTO unfinishedTaskDto);
+    List<Map<String, Object>> unfinishedTask(UnfinishedTaskDTO unfinishedTaskDto);
+
+    /**
+     * 获取时间轴
+     * @param timeLineDto
+     * @return
+     */
+    List<Map<String, Object>> timeLine(TimeLineDTO timeLineDto);
 }

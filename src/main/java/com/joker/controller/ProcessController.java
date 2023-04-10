@@ -9,12 +9,10 @@ import org.activiti.engine.impl.persistence.entity.DeploymentEntityImpl;
 import org.activiti.engine.impl.persistence.entity.ProcessDefinitionEntityImpl;
 import org.activiti.engine.repository.Deployment;
 import org.activiti.engine.repository.ProcessDefinition;
+import org.activiti.engine.task.Task;
 import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * @author: Li dong
@@ -80,10 +78,33 @@ public class ProcessController {
     @GetMapping("/startProcessInstance/{processDefinitionId}")
     public String startProcessInstance(@PathVariable String processDefinitionId){
         String businessKey = IdUtil.getSnowflakeNextIdStr();
-        Map<String, Object> variables = new HashMap<>(1);
-        variables.put("zhangsan", "lisi");
-        runtimeService.startProcessInstanceById(processDefinitionId, businessKey, variables);
+        runtimeService.startProcessInstanceById(processDefinitionId, businessKey);
         log.info("开启-流程业务ID: {}", businessKey);
         return businessKey;
+    }
+
+    /**
+     * 查询流程定义版本
+     * @param processDefinitionKey
+     * @return
+     */
+    @GetMapping("/processDefinitionList/{processDefinitionKey}")
+    public List<Map<String, Object>> processDefinitionList(@PathVariable String processDefinitionKey){
+        List<ProcessDefinition> processDefinitionList = repositoryService.createProcessDefinitionQuery()
+                .processDefinitionKey(processDefinitionKey)
+                .orderByProcessDefinitionVersion()
+                .desc()
+                .list();
+        List<Map<String, Object>> customTaskList = new ArrayList<>();
+        for (ProcessDefinition processDefinition : processDefinitionList) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("id", processDefinition.getId());
+            map.put("name", processDefinition.getName());
+            map.put("key", processDefinition.getKey());
+            map.put("version", processDefinition.getVersion());
+            map.put("deploymentId", processDefinition.getDeploymentId());
+            customTaskList.add(map);
+        }
+        return customTaskList;
     }
 }

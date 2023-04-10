@@ -1,15 +1,14 @@
 package com.joker.controller;
 
 import com.joker.dto.ApprovalDTO;
+import com.joker.dto.TimeLineDTO;
 import com.joker.dto.UnfinishedTaskDTO;
 import com.joker.service.ApprovalService;
-import org.activiti.engine.task.Task;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author: Li dong
@@ -37,7 +36,17 @@ public class ApprovalController {
      * @return
      */
     @PostMapping("/unfinishedTask")
-    public Object unfinishedTask(@RequestBody UnfinishedTaskDTO unfinishedTaskDto){
+    public List<Map<String, Object>> unfinishedTask(@RequestBody UnfinishedTaskDTO unfinishedTaskDto){
         return approvalService.unfinishedTask(unfinishedTaskDto);
+    }
+
+    /**
+     * 获取时间轴
+     * @param timeLineDto
+     * @return
+     */
+    @PostMapping("/timeLine")
+    public List<Map<String, Object>>  timeLine(@RequestBody TimeLineDTO timeLineDto){
+        return approvalService.timeLine(timeLineDto);
     }
 }
