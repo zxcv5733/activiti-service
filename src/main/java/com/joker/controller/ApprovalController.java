@@ -1,6 +1,7 @@
 package com.joker.controller;
 
 import com.joker.dto.ApprovalDTO;
+import com.joker.dto.AttachmentDTO;
 import com.joker.dto.TimeLineDTO;
 import com.joker.dto.UnfinishedTaskDTO;
 import com.joker.service.ApprovalService;
@@ -28,6 +29,23 @@ public class ApprovalController {
     @PostMapping("/approval")
     public void approval(@RequestBody ApprovalDTO approvalDto){
         approvalService.approval(approvalDto);
+    }
+
+    /**
+     * 添加评论
+     * @param approvalDto
+     */
+    @PostMapping("/addComment")
+    public void addComment(@RequestBody ApprovalDTO approvalDto){
+        approvalService.addComment(approvalDto);
+    }
+
+    /**
+     * 上传附件
+     */
+    @PostMapping("/uploadAttachment")
+    public void uploadAttachment(@RequestBody AttachmentDTO attachmentDto){
+        approvalService.uploadAttachment(attachmentDto);
     }
 
     /**

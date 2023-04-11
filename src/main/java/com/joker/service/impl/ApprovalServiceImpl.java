@@ -1,6 +1,7 @@
 package com.joker.service.impl;
 
 import com.joker.dto.ApprovalDTO;
+import com.joker.dto.AttachmentDTO;
 import com.joker.dto.TimeLineDTO;
 import com.joker.dto.UnfinishedTaskDTO;
 import com.joker.service.ApprovalService;
@@ -11,12 +12,12 @@ import org.activiti.bpmn.model.UserTask;
 import org.activiti.engine.HistoryService;
 import org.activiti.engine.RepositoryService;
 import org.activiti.engine.TaskService;
-import org.activiti.engine.history.HistoricDetail;
-import org.activiti.engine.history.HistoricProcessInstance;
 import org.activiti.engine.history.HistoricTaskInstance;
 import org.activiti.engine.impl.identity.Authentication;
+import org.activiti.engine.task.Attachment;
 import org.activiti.engine.task.Comment;
 import org.activiti.engine.task.Task;
+import org.activiti.engine.task.TaskQuery;
 import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.util.*;
@@ -122,19 +123,83 @@ public class ApprovalServiceImpl implements ApprovalService {
                 }
             }
             List<String> commentList = new ArrayList<>();
-            // 取出对应评论表中对应当前人的审批意见
-            List<Comment> comments = taskService.getProcessInstanceComments(historicTaskInstance.getProcessInstanceId()).stream().filter(m -> m.getUserId().equals(assignee)).collect(Collectors.toList());
-            if (comments.size() != 0){
-                commentList = comments.stream().map(Comment::getFullMessage).collect(Collectors.toList());
+            List<Map<String, Object>> attachmentList = new ArrayList<>();
+            if (Objects.nonNull(historicTaskInstance)){
+                // 取出对应评论表中对应当前人的审批意见
+                List<Comment> comments = taskService.getProcessInstanceComments(historicTaskInstance.getProcessInstanceId()).stream()
+                        .filter(m -> "comment".equals(m.getType()))
+                        .filter(m -> Objects.nonNull(m.getUserId()))
+                        .filter(m -> m.getUserId().equals(assignee)).collect(Collectors.toList());
+                if (comments.size() != 0){
+                    commentList = comments.stream().map(Comment::getFullMessage).collect(Collectors.toList());
+                }
+                // 查询附件
+                List<Attachment> attachments = taskService.getProcessInstanceAttachments(historicTaskInstance.getProcessInstanceId());
+
+                if (attachments.size() != 0){
+                    for (Attachment attachment : attachments) {
+                        if (Objects.nonNull(attachment.getUserId()) && attachment.getUserId().equals(assignee)){
+                            Map<String, Object> attachmentMap = new LinkedHashMap<>(3);
+                            attachmentMap.put("attachmentName", attachment.getName());
+                            attachmentMap.put("attachmentDescription", attachment.getDescription());
+                            attachmentMap.put("url", attachment.getUrl());
+                            attachmentList.add(attachmentMap);
+                        }
+                    }
+                }
+
             }
             map.put("assignee", assignee);
             map.put("endTime", endTime);
             map.put("status", status);
             map.put("comment", commentList);
+            map.put("attachment", attachmentList);
             log.info("节点信息: {}", map);
             customList.add(map);
         }
         return customList;
+    }
+
+    /**
+     * 添加评论
+     *
+     * @param approvalDto
+     */
+    @Override
+    public void addComment(ApprovalDTO approvalDto) {
+        String assignee = approvalDto.getAssignee();
+        String businessKey = approvalDto.getBusinessKey();
+        log.info("评论人: {} 业务ID: {}", assignee, businessKey);
+        Task task = taskService.createTaskQuery()
+                .taskAssignee(assignee)
+                .processInstanceBusinessKey(businessKey)
+                .singleResult();
+        if (Objects.nonNull(task)){
+            // 需要添加此句否则审批意见表中ACT_HI_COMMENT，审批人的userId是空的
+            Authentication.setAuthenticatedUserId(assignee);
+            // 添加备注
+            taskService.addComment(task.getId(), task.getProcessInstanceId(), approvalDto.getRemarks());
+        }
+
+    }
+
+    /**
+     * 上传附件
+     *
+     * @param attachmentDto
+     */
+    @Override
+    public void uploadAttachment(AttachmentDTO attachmentDto) {
+        String assignee = attachmentDto.getAssignee();
+        // 添加附件到task中
+        Task task = taskService.createTaskQuery()
+                .processInstanceBusinessKey(attachmentDto.getBusinessKey())
+                .taskAssignee(assignee)
+                .singleResult();
+        // 需要添加此句否则审批意见表中ACT_HI_ATTACHMENT，审批人的userId是空的
+        Authentication.setAuthenticatedUserId(assignee);
+        taskService.createAttachment("url", task.getId(), task.getProcessInstanceId(), attachmentDto.getAttachmentName(), attachmentDto.getAttachmentDescription(), attachmentDto.getUrl());
+
     }
 
 }
