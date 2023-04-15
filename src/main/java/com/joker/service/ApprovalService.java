@@ -4,6 +4,9 @@ import com.joker.dto.ApprovalDTO;
 import com.joker.dto.AttachmentDTO;
 import com.joker.dto.TimeLineDTO;
 import com.joker.dto.UnfinishedTaskDTO;
+import com.joker.vo.NodeInfoVO;
+import com.joker.vo.UnfinishedTaskVO;
+
 import java.util.List;
 import java.util.Map;
 
@@ -25,14 +28,14 @@ public interface ApprovalService {
      * @param unfinishedTaskDto
      * @return
      */
-    List<Map<String, Object>> unfinishedTask(UnfinishedTaskDTO unfinishedTaskDto);
+    List<UnfinishedTaskVO> unfinishedTask(UnfinishedTaskDTO unfinishedTaskDto);
 
     /**
      * 获取时间轴
      * @param timeLineDto
      * @return
      */
-    List<Map<String, Object>> timeLine(TimeLineDTO timeLineDto);
+    List<NodeInfoVO> timeLine(TimeLineDTO timeLineDto);
 
     /**
      * 添加评论

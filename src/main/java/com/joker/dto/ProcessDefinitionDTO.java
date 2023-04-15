@@ -8,18 +8,13 @@ import java.io.Serializable;
 
 /**
  * @author: Li dong
- * @date: 2023/4/9 20:31
+ * @date: 2023/4/15 13:19
  * @description:
  */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class UnfinishedTaskDTO implements Serializable {
-    /**
-     * 受理人
-     */
-    private String assignee;
-
+public class ProcessDefinitionDTO implements Serializable {
     /**
      * 当前页数
      */

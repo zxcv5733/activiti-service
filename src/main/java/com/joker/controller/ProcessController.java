@@ -2,6 +2,8 @@ package com.joker.controller;
 
 import cn.hutool.core.util.IdUtil;
 import com.joker.dto.DeploymentDTO;
+import com.joker.dto.ProcessDefinitionDTO;
+import com.joker.vo.ProcessDefinitionVO;
 import lombok.extern.slf4j.Slf4j;
 import org.activiti.engine.RepositoryService;
 import org.activiti.engine.RuntimeService;
@@ -9,7 +11,6 @@ import org.activiti.engine.impl.persistence.entity.DeploymentEntityImpl;
 import org.activiti.engine.impl.persistence.entity.ProcessDefinitionEntityImpl;
 import org.activiti.engine.repository.Deployment;
 import org.activiti.engine.repository.ProcessDefinition;
-import org.activiti.engine.task.Task;
 import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import java.util.*;
@@ -58,7 +59,6 @@ public class ProcessController {
     public String createDeployment(@RequestBody DeploymentDTO deploymentDto){
         Deployment deployment = repositoryService.createDeployment()
                 .addClasspathResource("bpmn/" + deploymentDto.getId() + ".bpmn")
-                .name(deploymentDto.getName())
                 .deploy();
         List<ProcessDefinitionEntityImpl> deployedArtifacts = ((DeploymentEntityImpl) deployment).getDeployedArtifacts(ProcessDefinitionEntityImpl.class);
         Optional<ProcessDefinitionEntityImpl> optional = deployedArtifacts.stream().findFirst();
@@ -85,26 +85,47 @@ public class ProcessController {
 
     /**
      * 查询流程定义版本
-     * @param processDefinitionKey
+     * @param processDefinitionDto
      * @return
      */
-    @GetMapping("/processDefinitionList/{processDefinitionKey}")
-    public List<Map<String, Object>> processDefinitionList(@PathVariable String processDefinitionKey){
+    @PostMapping("/processDefinitionList")
+    public List<ProcessDefinitionVO> processDefinitionList(@RequestBody ProcessDefinitionDTO processDefinitionDto){
         List<ProcessDefinition> processDefinitionList = repositoryService.createProcessDefinitionQuery()
-                .processDefinitionKey(processDefinitionKey)
                 .orderByProcessDefinitionVersion()
                 .desc()
-                .list();
-        List<Map<String, Object>> customTaskList = new ArrayList<>();
+                .listPage(processDefinitionDto.getPageIndex() - 1 , processDefinitionDto.getPageSize());
+        List<ProcessDefinitionVO> processDefinitionVos = new ArrayList<>();
         for (ProcessDefinition processDefinition : processDefinitionList) {
-            Map<String, Object> map = new LinkedHashMap<>();
-            map.put("id", processDefinition.getId());
-            map.put("name", processDefinition.getName());
-            map.put("key", processDefinition.getKey());
-            map.put("version", processDefinition.getVersion());
-            map.put("deploymentId", processDefinition.getDeploymentId());
-            customTaskList.add(map);
+            ProcessDefinitionVO processDefinitionVo = ProcessDefinitionVO.builder()
+                    .id(processDefinition.getId())
+                    .name(processDefinition.getName())
+                    .key(processDefinition.getKey())
+                    .version(processDefinition.getVersion())
+                    .deploymentId(processDefinition.getDeploymentId())
+                    .build();
+            processDefinitionVos.add(processDefinitionVo);
         }
-        return customTaskList;
+        return processDefinitionVos;
+    }
+
+    /**
+     * 查询流程定义详情
+     * @param processDefinitionId
+     * @return
+     */
+    @GetMapping("/processDefinitionDetail/{processDefinitionId}")
+    public ProcessDefinitionVO processDefinitionDetail(@PathVariable String processDefinitionId){
+        ProcessDefinition processDefinition = repositoryService.createProcessDefinitionQuery()
+                .processDefinitionId(processDefinitionId)
+                .orderByProcessDefinitionVersion()
+                .desc()
+                .singleResult();
+        return ProcessDefinitionVO.builder()
+                .id(processDefinition.getId())
+                .name(processDefinition.getName())
+                .key(processDefinition.getKey())
+                .version(processDefinition.getVersion())
+                .deploymentId(processDefinition.getDeploymentId())
+                .build();
     }
 }

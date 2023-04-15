@@ -5,11 +5,13 @@ import com.joker.dto.AttachmentDTO;
 import com.joker.dto.TimeLineDTO;
 import com.joker.dto.UnfinishedTaskDTO;
 import com.joker.service.ApprovalService;
+import com.joker.vo.NodeInfoVO;
+import com.joker.vo.UnfinishedTaskVO;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.util.List;
-import java.util.Map;
+
 
 /**
  * @author: Li dong
@@ -54,7 +56,7 @@ public class ApprovalController {
      * @return
      */
     @PostMapping("/unfinishedTask")
-    public List<Map<String, Object>> unfinishedTask(@RequestBody UnfinishedTaskDTO unfinishedTaskDto){
+    public List<UnfinishedTaskVO> unfinishedTask(@RequestBody UnfinishedTaskDTO unfinishedTaskDto){
         return approvalService.unfinishedTask(unfinishedTaskDto);
     }
 
@@ -64,7 +66,7 @@ public class ApprovalController {
      * @return
      */
     @PostMapping("/timeLine")
-    public List<Map<String, Object>>  timeLine(@RequestBody TimeLineDTO timeLineDto){
+    public List<NodeInfoVO>  timeLine(@RequestBody TimeLineDTO timeLineDto){
         return approvalService.timeLine(timeLineDto);
     }
 }
