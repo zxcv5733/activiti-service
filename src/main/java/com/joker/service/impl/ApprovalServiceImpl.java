@@ -121,7 +121,10 @@ public class ApprovalServiceImpl implements ApprovalService {
         // 获取全部的节点信息
         List<NodeInfoVO> nodeInfoVos = new ArrayList<>();
         for (UserTask userTask : userTasks) {
-            NodeInfoVO nodeInfoVo = NodeInfoVO.builder().assignee(userTask.getAssignee()).status(status).build();
+            NodeInfoVO nodeInfoVo = NodeInfoVO.builder().assignee(userTask.getAssignee())
+                    .attachments(new ArrayList<>())
+                    .comments(new ArrayList<>())
+                    .status(status).build();
             nodeInfoVos.add(nodeInfoVo);
         }
 

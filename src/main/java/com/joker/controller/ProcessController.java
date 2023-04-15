@@ -3,6 +3,7 @@ package com.joker.controller;
 import cn.hutool.core.util.IdUtil;
 import com.joker.dto.DeploymentDTO;
 import com.joker.dto.ProcessDefinitionDTO;
+import com.joker.dto.ProcessInstanceDTO;
 import com.joker.vo.ProcessDefinitionVO;
 import lombok.extern.slf4j.Slf4j;
 import org.activiti.engine.RepositoryService;
@@ -72,13 +73,13 @@ public class ProcessController {
 
     /**
      * 开启流程实例
-     * @param processDefinitionId
+     * @param processInstanceDto
      * @return
      */
-    @GetMapping("/startProcessInstance/{processDefinitionId}")
-    public String startProcessInstance(@PathVariable String processDefinitionId){
+    @PostMapping("/startProcessInstance")
+    public String startProcessInstance(@RequestBody ProcessInstanceDTO processInstanceDto){
         String businessKey = IdUtil.getSnowflakeNextIdStr();
-        runtimeService.startProcessInstanceById(processDefinitionId, businessKey);
+        runtimeService.startProcessInstanceById(processInstanceDto.getProcessDefinitionId(), businessKey, processInstanceDto.getVariables());
         log.info("开启-流程业务ID: {}", businessKey);
         return businessKey;
     }
