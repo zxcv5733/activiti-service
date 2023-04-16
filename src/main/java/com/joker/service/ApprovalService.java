@@ -1,14 +1,9 @@
 package com.joker.service;
 
-import com.joker.dto.ApprovalDTO;
-import com.joker.dto.AttachmentDTO;
-import com.joker.dto.TimeLineDTO;
-import com.joker.dto.UnfinishedTaskDTO;
+import com.joker.dto.*;
 import com.joker.vo.NodeInfoVO;
-import com.joker.vo.UnfinishedTaskVO;
-
+import com.joker.vo.TaskVO;
 import java.util.List;
-import java.util.Map;
 
 /**
  * @author: Li dong
@@ -28,7 +23,7 @@ public interface ApprovalService {
      * @param unfinishedTaskDto
      * @return
      */
-    List<UnfinishedTaskVO> unfinishedTask(UnfinishedTaskDTO unfinishedTaskDto);
+    List<TaskVO> unfinishedTask(UnfinishedTaskDTO unfinishedTaskDto);
 
     /**
      * 获取时间轴
@@ -48,4 +43,18 @@ public interface ApprovalService {
      * @param attachmentDto
      */
     void uploadAttachment(AttachmentDTO attachmentDto);
+
+    /**
+     * 已经完成任务
+     * @param finishedTaskDto
+     * @return
+     */
+    List<TaskVO> finishedTask(FinishedTaskDTO finishedTaskDto);
+
+    /**
+     * 我发起的任务
+     * @param initiatedTaskDto
+     * @return
+     */
+    List<TaskVO> initiatedTask(InitiatedTaskDTO initiatedTaskDto);
 }

@@ -25,4 +25,9 @@ public class ProcessInstanceDTO implements Serializable {
      * EL表达式动态指定审批人
      */
     private Map<String, Object> variables;
+
+    /**
+     * 启动者
+     */
+    private String startUser;
 }

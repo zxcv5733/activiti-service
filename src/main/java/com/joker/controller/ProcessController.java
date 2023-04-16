@@ -8,6 +8,7 @@ import com.joker.vo.ProcessDefinitionVO;
 import lombok.extern.slf4j.Slf4j;
 import org.activiti.engine.RepositoryService;
 import org.activiti.engine.RuntimeService;
+import org.activiti.engine.impl.identity.Authentication;
 import org.activiti.engine.impl.persistence.entity.DeploymentEntityImpl;
 import org.activiti.engine.impl.persistence.entity.ProcessDefinitionEntityImpl;
 import org.activiti.engine.repository.Deployment;
@@ -78,6 +79,8 @@ public class ProcessController {
      */
     @PostMapping("/startProcessInstance")
     public String startProcessInstance(@RequestBody ProcessInstanceDTO processInstanceDto){
+        // 设置流程启动者, 需要添加此句否则审批意见表中ACT_HI_PROCINST，审批人的userId是空的
+        Authentication.setAuthenticatedUserId(processInstanceDto.getStartUser());
         String businessKey = IdUtil.getSnowflakeNextIdStr();
         runtimeService.startProcessInstanceById(processInstanceDto.getProcessDefinitionId(), businessKey, processInstanceDto.getVariables());
         log.info("开启-流程业务ID: {}", businessKey);

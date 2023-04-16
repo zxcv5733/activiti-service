@@ -17,11 +17,12 @@ import java.util.Date;
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
-public class UnfinishedTaskVO implements Serializable {
+public class TaskVO implements Serializable {
     /**
      * 流程实例ID
      */
     private String processDefinitionId;
+
     /**
      * 业务ID
      */

@@ -62,3 +62,7 @@ spring:
     history-Level: full
     #校验流程文件，默认校验resources下的processes文件夹里的流程文件
     check-process-definitions: false
+# activti 打印日志
+logging:
+  level:
+    org.activiti.engine.impl.persistence.entity: debug

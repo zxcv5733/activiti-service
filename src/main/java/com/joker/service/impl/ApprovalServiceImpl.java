@@ -1,13 +1,10 @@
 package com.joker.service.impl;
 
-import com.joker.dto.ApprovalDTO;
-import com.joker.dto.AttachmentDTO;
-import com.joker.dto.TimeLineDTO;
-import com.joker.dto.UnfinishedTaskDTO;
+import com.joker.dto.*;
 import com.joker.service.ApprovalService;
 import com.joker.vo.AttachmentVO;
 import com.joker.vo.NodeInfoVO;
-import com.joker.vo.UnfinishedTaskVO;
+import com.joker.vo.TaskVO;
 import lombok.extern.slf4j.Slf4j;
 import org.activiti.bpmn.model.BpmnModel;
 import org.activiti.bpmn.model.Process;
@@ -16,14 +13,16 @@ import org.activiti.engine.HistoryService;
 import org.activiti.engine.RepositoryService;
 import org.activiti.engine.RuntimeService;
 import org.activiti.engine.TaskService;
+import org.activiti.engine.history.HistoricActivityInstance;
+import org.activiti.engine.history.HistoricProcessInstance;
 import org.activiti.engine.history.HistoricTaskInstance;
 import org.activiti.engine.impl.identity.Authentication;
-import org.activiti.engine.repository.Deployment;
 import org.activiti.engine.repository.ProcessDefinition;
 import org.activiti.engine.runtime.ProcessInstance;
 import org.activiti.engine.task.Attachment;
 import org.activiti.engine.task.Comment;
 import org.activiti.engine.task.Task;
+import org.activiti.engine.task.TaskInfo;
 import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.util.*;
@@ -75,34 +74,21 @@ public class ApprovalServiceImpl implements ApprovalService {
      * @return
      */
     @Override
-    public List<UnfinishedTaskVO> unfinishedTask(UnfinishedTaskDTO unfinishedTaskDto) {
+    public List<TaskVO> unfinishedTask(UnfinishedTaskDTO unfinishedTaskDto) {
 
         List<Task> tasks = taskService.createTaskQuery()
                 .taskAssignee(unfinishedTaskDto.getAssignee())
                 .orderByTaskCreateTime().desc()
                 .listPage(unfinishedTaskDto.getPageIndex() - 1, unfinishedTaskDto.getPageSize());
 
-
         // 报错: Could not write content: lazy loading outside command context (through reference chain: java.util.ArrayList[0]->org.activiti.engine.impl.persistence.entity.TaskEntity[“variableInstances”]);
         // nested exception is com.fasterxml.jackson.databind.JsonMappingException: lazy loading outside command context (through reference chain: java.util.ArrayList[0]->org.activiti.engine.
         // 解决办法: 数据转换自定义对象
-        List<UnfinishedTaskVO> unfinishedTasks = new ArrayList<>();
-        for (Task task : tasks) {
-            ProcessInstance processInstance = runtimeService.createProcessInstanceQuery()
-                    .processInstanceId(task.getProcessInstanceId()).singleResult();
-
-            UnfinishedTaskVO unfinishedTaskVo = UnfinishedTaskVO.builder()
-                    .processDefinitionId(processInstance.getProcessDefinitionId())
-                    .businessKey(processInstance.getBusinessKey())
-                    .processDefinitionKey(processInstance.getProcessDefinitionKey())
-                    .processDefinitionVersion(processInstance.getProcessDefinitionVersion())
-                    .processDefinitionName(processInstance.getProcessDefinitionName())
-                    .startTime(processInstance.getStartTime())
-                    .build();
-            unfinishedTasks.add(unfinishedTaskVo);
-        }
-
-        return unfinishedTasks;
+        Set<String> processInstanceIds = tasks.stream().map(TaskInfo::getProcessInstanceId).collect(Collectors.toSet());
+        List<HistoricProcessInstance> historicProcessInstances = historyService.createHistoricProcessInstanceQuery()
+                .processInstanceIds(processInstanceIds)
+                .list();
+        return getTaskList(historicProcessInstances);
     }
 
     /**
@@ -116,17 +102,28 @@ public class ApprovalServiceImpl implements ApprovalService {
         BpmnModel bpmnModel = repositoryService.getBpmnModel(timeLineDto.getProcessDefinitionId());
         Process process = bpmnModel.getProcesses().get(0);
         List<UserTask> userTasks = process.findFlowElementsOfType(UserTask.class);
-        String status = "待审批";
+
+
+
+        List<NodeInfoVO> nodeInfoVos = new ArrayList<>();
+
+        // 添加流程发起人
+        HistoricProcessInstance historicProcessInstance = historyService.createHistoricProcessInstanceQuery()
+                .processInstanceBusinessKey(timeLineDto.getBusinessKey())
+                .singleResult();
+        nodeInfoVos.add(NodeInfoVO.builder().startUser(historicProcessInstance.getStartUserId())
+                .startTime(historicProcessInstance.getStartTime()).assignee("").build());
 
         // 获取全部的节点信息
-        List<NodeInfoVO> nodeInfoVos = new ArrayList<>();
         for (UserTask userTask : userTasks) {
             NodeInfoVO nodeInfoVo = NodeInfoVO.builder().assignee(userTask.getAssignee())
                     .attachments(new ArrayList<>())
                     .comments(new ArrayList<>())
-                    .status(status).build();
+                    .status("待审批").build();
             nodeInfoVos.add(nodeInfoVo);
         }
+
+
 
 
         // 查询历史信息，所有完成的任务都会在历史信息中
@@ -162,7 +159,7 @@ public class ApprovalServiceImpl implements ApprovalService {
                 }
             }
             Date endTime = historicTaskInstance.getEndTime();
-
+            String status = "待审批";
             if (Objects.nonNull(endTime)){
                 status = "已审批";
             }
@@ -221,6 +218,69 @@ public class ApprovalServiceImpl implements ApprovalService {
         Authentication.setAuthenticatedUserId(assignee);
         taskService.createAttachment("url", task.getId(), task.getProcessInstanceId(), attachmentDto.getAttachmentName(), attachmentDto.getAttachmentDescription(), attachmentDto.getUrl());
 
+    }
+
+    /**
+     * 已经完成任务
+     *
+     * @param finishedTaskDto
+     * @return
+     */
+    @Override
+    public List<TaskVO> finishedTask(FinishedTaskDTO finishedTaskDto) {
+
+        List<HistoricActivityInstance> historicActivityInstances = historyService.createHistoricActivityInstanceQuery()
+                .taskAssignee(finishedTaskDto.getAssignee())
+                .finished()
+                .orderByHistoricActivityInstanceStartTime().desc()
+                .listPage(finishedTaskDto.getPageIndex() - 1, finishedTaskDto.getPageSize());
+
+        Set<String> processInstanceIds = historicActivityInstances.stream().map(HistoricActivityInstance::getProcessInstanceId).collect(Collectors.toSet());
+
+        // 查询历史流程实例
+        List<HistoricProcessInstance> historicProcessInstances = historyService.createHistoricProcessInstanceQuery()
+                .processInstanceIds(processInstanceIds)
+                .list();
+        return getTaskList(historicProcessInstances);
+    }
+
+    /**
+     * 我发起的任务
+     *
+     * @param initiatedTaskDto
+     * @return
+     */
+    @Override
+    public List<TaskVO> initiatedTask(InitiatedTaskDTO initiatedTaskDto) {
+        // startedBy 查询我发起的
+        List<HistoricProcessInstance> historicProcessInstances = historyService.createHistoricProcessInstanceQuery()
+                .startedBy(initiatedTaskDto.getUser())
+                .orderByProcessInstanceStartTime().desc()
+                .listPage(initiatedTaskDto.getPageIndex() - 1, initiatedTaskDto.getPageSize());
+
+        return getTaskList(historicProcessInstances);
+    }
+
+    /**
+     * 获取任务列表
+     * @param historicProcessInstances
+     * @return
+     */
+    private List<TaskVO> getTaskList(List<HistoricProcessInstance> historicProcessInstances) {
+        List<TaskVO> taskVos = new ArrayList<>();
+        for (HistoricProcessInstance historicProcessInstance : historicProcessInstances) {
+            TaskVO taskVo = TaskVO.builder()
+                    .processDefinitionId(historicProcessInstance.getProcessDefinitionId())
+                    .businessKey(historicProcessInstance.getBusinessKey())
+                    .processDefinitionKey(historicProcessInstance.getProcessDefinitionKey())
+                    .processDefinitionVersion(historicProcessInstance.getProcessDefinitionVersion())
+                    .processDefinitionName(historicProcessInstance.getProcessDefinitionName())
+                    .startTime(historicProcessInstance.getStartTime())
+                    .build();
+            taskVos.add(taskVo);
+        }
+
+        return taskVos;
     }
 
 }

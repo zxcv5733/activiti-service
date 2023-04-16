@@ -1,12 +1,9 @@
 package com.joker.controller;
 
-import com.joker.dto.ApprovalDTO;
-import com.joker.dto.AttachmentDTO;
-import com.joker.dto.TimeLineDTO;
-import com.joker.dto.UnfinishedTaskDTO;
+import com.joker.dto.*;
 import com.joker.service.ApprovalService;
 import com.joker.vo.NodeInfoVO;
-import com.joker.vo.UnfinishedTaskVO;
+import com.joker.vo.TaskVO;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -56,8 +53,26 @@ public class ApprovalController {
      * @return
      */
     @PostMapping("/unfinishedTask")
-    public List<UnfinishedTaskVO> unfinishedTask(@RequestBody UnfinishedTaskDTO unfinishedTaskDto){
+    public List<TaskVO> unfinishedTask(@RequestBody UnfinishedTaskDTO unfinishedTaskDto){
         return approvalService.unfinishedTask(unfinishedTaskDto);
+    }
+
+    /**
+     * 查询已经完成任务
+     * @return
+     */
+    @PostMapping("/finishedTask")
+    public List<TaskVO> finishedTask(@RequestBody FinishedTaskDTO finishedTaskDto){
+        return approvalService.finishedTask(finishedTaskDto);
+    }
+
+    /**
+     * 我发起的任务
+     * @return
+     */
+    @PostMapping("/initiatedTask")
+    public List<TaskVO> initiatedTask(@RequestBody InitiatedTaskDTO initiatedTaskDto){
+        return approvalService.initiatedTask(initiatedTaskDto);
     }
 
     /**

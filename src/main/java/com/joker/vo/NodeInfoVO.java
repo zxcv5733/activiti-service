@@ -36,6 +36,11 @@ public class NodeInfoVO implements Serializable {
     private String assignee;
 
     /**
+     * 发起人
+     */
+    private String startUser;
+
+    /**
      * 开始时间
      */
     private Date startTime;
