@@ -84,4 +84,13 @@ public class ApprovalController {
     public List<NodeInfoVO>  timeLine(@RequestBody TimeLineDTO timeLineDto){
         return approvalService.timeLine(timeLineDto);
     }
+
+    /**
+     * 驳回
+     * @return
+     */
+    @PostMapping("/reject")
+    public void reject(@RequestBody RollbackDTO rollbackDto){
+        approvalService.reject(rollbackDto);
+    }
 }

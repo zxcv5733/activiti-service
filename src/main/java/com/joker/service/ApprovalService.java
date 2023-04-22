@@ -57,4 +57,10 @@ public interface ApprovalService {
      * @return
      */
     List<TaskVO> initiatedTask(InitiatedTaskDTO initiatedTaskDto);
+
+    /**
+     * 驳回流程
+     * @param rollbackDto
+     */
+    void reject(RollbackDTO rollbackDto);
 }
