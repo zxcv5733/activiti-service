@@ -6,9 +6,8 @@ import com.joker.vo.AttachmentVO;
 import com.joker.vo.NodeInfoVO;
 import com.joker.vo.TaskVO;
 import lombok.extern.slf4j.Slf4j;
-import org.activiti.bpmn.model.BpmnModel;
+import org.activiti.bpmn.model.*;
 import org.activiti.bpmn.model.Process;
-import org.activiti.bpmn.model.UserTask;
 import org.activiti.engine.HistoryService;
 import org.activiti.engine.RepositoryService;
 import org.activiti.engine.RuntimeService;
@@ -17,8 +16,7 @@ import org.activiti.engine.history.HistoricActivityInstance;
 import org.activiti.engine.history.HistoricProcessInstance;
 import org.activiti.engine.history.HistoricTaskInstance;
 import org.activiti.engine.impl.identity.Authentication;
-import org.activiti.engine.repository.ProcessDefinition;
-import org.activiti.engine.runtime.ProcessInstance;
+import org.activiti.engine.runtime.Execution;
 import org.activiti.engine.task.Attachment;
 import org.activiti.engine.task.Comment;
 import org.activiti.engine.task.Task;
@@ -58,11 +56,14 @@ public class ApprovalServiceImpl implements ApprovalService {
      */
     @Override
     public void approval(ApprovalDTO approvalDto) {
+        String assignee = approvalDto.getAssignee();
         Task task = taskService.createTaskQuery()
-                .taskAssignee(approvalDto.getAssignee())
+                .taskAssignee(assignee)
                 .processInstanceBusinessKey(approvalDto.getBusinessKey())
                 .singleResult();
-        log.info("审批人: {} 业务ID: {} 任务: {}", approvalDto.getAssignee(), approvalDto.getBusinessKey(), task);
+        log.info("审批人: {} 业务ID: {} 任务: {}", assignee, approvalDto.getBusinessKey(), task);
+        // 添加评论
+        addComment(task.getId(), task.getProcessInstanceId(), approvalDto.getRemarks(), assignee);
         // 点击完成
         taskService.complete(task.getId());
     }
@@ -104,7 +105,19 @@ public class ApprovalServiceImpl implements ApprovalService {
         List<UserTask> userTasks = process.findFlowElementsOfType(UserTask.class);
 
 
+        // 原始节点
+        List<NodeInfoVO> sourceNodeInfoVos = new ArrayList<>();
 
+        // 获取全部的节点信息
+        for (UserTask userTask : userTasks) {
+            NodeInfoVO nodeInfoVo = NodeInfoVO.builder().assignee(userTask.getAssignee())
+                    .attachments(new ArrayList<>())
+                    .comments(new ArrayList<>())
+                    .status("待审批").build();
+            sourceNodeInfoVos.add(nodeInfoVo);
+        }
+
+        // 实际所有节点
         List<NodeInfoVO> nodeInfoVos = new ArrayList<>();
 
         // 添加流程发起人
@@ -114,22 +127,11 @@ public class ApprovalServiceImpl implements ApprovalService {
         nodeInfoVos.add(NodeInfoVO.builder().startUser(historicProcessInstance.getStartUserId())
                 .startTime(historicProcessInstance.getStartTime()).assignee("").build());
 
-        // 获取全部的节点信息
-        for (UserTask userTask : userTasks) {
-            NodeInfoVO nodeInfoVo = NodeInfoVO.builder().assignee(userTask.getAssignee())
-                    .attachments(new ArrayList<>())
-                    .comments(new ArrayList<>())
-                    .status("待审批").build();
-            nodeInfoVos.add(nodeInfoVo);
-        }
-
-
-
-
         // 查询历史信息，所有完成的任务都会在历史信息中
         List<HistoricTaskInstance> historicTaskInstances = historyService.createHistoricTaskInstanceQuery()
                 .processInstanceBusinessKey(timeLineDto.getBusinessKey())
                 .list();
+
         for (HistoricTaskInstance historicTaskInstance : historicTaskInstances) {
             String assignee = historicTaskInstance.getAssignee();
             String processInstanceId = historicTaskInstance.getProcessInstanceId();
@@ -170,10 +172,12 @@ public class ApprovalServiceImpl implements ApprovalService {
                     .startTime(historicTaskInstance.getStartTime())
                     .endTime(endTime).status(status).build();
             log.info("节点: {}",nodeInfoVo);
-            // 判断全部节点中有则移除，添加当前节点
-            Optional<NodeInfoVO> optional = nodeInfoVos.stream().filter(m -> m.getAssignee().equals(assignee)).findFirst();
-            optional.ifPresent(nodeInfoVos::remove);
-            nodeInfoVos.add(nodeInfoVo);
+
+            // 判断全部节点中是否有当前节点，有则添加
+            Optional<NodeInfoVO> optional = sourceNodeInfoVos.stream().filter(m -> m.getAssignee().equals(assignee)).findFirst();
+            if (optional.isPresent()){
+                nodeInfoVos.add(nodeInfoVo);
+            }
         }
         return nodeInfoVos;
     }
@@ -193,10 +197,7 @@ public class ApprovalServiceImpl implements ApprovalService {
                 .processInstanceBusinessKey(businessKey)
                 .singleResult();
         if (Objects.nonNull(task)){
-            // 需要添加此句否则审批意见表中ACT_HI_COMMENT，审批人的userId是空的
-            Authentication.setAuthenticatedUserId(assignee);
-            // 添加备注
-            taskService.addComment(task.getId(), task.getProcessInstanceId(), approvalDto.getRemarks());
+            addComment(task.getId(), task.getProcessInstanceId(), approvalDto.getRemarks(), assignee);
         }
 
     }
@@ -262,6 +263,81 @@ public class ApprovalServiceImpl implements ApprovalService {
     }
 
     /**
+     * 驳回流程
+     *
+     * @param rollbackDto
+     */
+    @Override
+    public void reject(RollbackDTO rollbackDto) {
+        List<HistoricTaskInstance> historicTaskInstances = historyService.createHistoricTaskInstanceQuery()
+                .processInstanceBusinessKey(rollbackDto.getBusinessKey())
+                .orderByHistoricTaskInstanceStartTime()
+                .desc()
+                .list();
+
+        Integer size = 2;
+
+        if (Objects.isNull(historicTaskInstances) || historicTaskInstances.size() < size) {
+            return;
+        }
+
+        // 当前任务实例
+        HistoricTaskInstance currentTaskInstance = historicTaskInstances.get(0);
+
+        // 上一个任务实例
+        HistoricTaskInstance beforeTaskInstance = historicTaskInstances.get(1);
+
+
+        BpmnModel bpmnModel = repositoryService.getBpmnModel(beforeTaskInstance.getProcessDefinitionId());
+
+        String beforeActivityId = null;
+        // 得到ActivityId，只有HistoricActivityInstance对象里才有此方法
+        Optional<String> optional = historyService.createHistoricActivityInstanceQuery()
+                .executionId(beforeTaskInstance.getExecutionId()).finished().list()
+                .stream().filter(m -> Objects.nonNull(m.getTaskId()))
+                .filter(m -> m.getTaskId().equals(beforeTaskInstance.getId()))
+                .map(HistoricActivityInstance::getActivityId).findFirst();
+
+        if (optional.isPresent()){
+            beforeActivityId = optional.get();
+        }
+
+        if (Objects.nonNull(beforeActivityId)){
+            // 得到上个节点的信息
+            FlowNode beforeFlowNode = (FlowNode) bpmnModel.getMainProcess().getFlowElement(beforeActivityId);
+
+            // 取得当前节点的信息
+            Execution execution = runtimeService.createExecutionQuery().executionId(currentTaskInstance.getExecutionId()).singleResult();
+            FlowNode currentFlowNode = (FlowNode) bpmnModel.getMainProcess().getFlowElement(execution.getActivityId());
+
+            // 记录当前节点的原活动方向
+            List<SequenceFlow> sourceSequenceFlowList = new ArrayList<>(currentFlowNode.getOutgoingFlows());
+
+            // 清理活动方向
+            currentFlowNode.getOutgoingFlows().clear();
+
+            // 建立新方向
+            List<SequenceFlow> newSequenceFlowList = new ArrayList<>();
+            SequenceFlow newSequenceFlow = new SequenceFlow();
+            newSequenceFlow.setId("flow4");
+            newSequenceFlow.setSourceFlowElement(currentFlowNode);
+            newSequenceFlow.setTargetFlowElement(beforeFlowNode);
+            newSequenceFlowList.add(newSequenceFlow);
+            currentFlowNode.setOutgoingFlows(newSequenceFlowList);
+
+            // 添加评论
+            addComment(currentTaskInstance.getId(), currentTaskInstance.getProcessInstanceId(), rollbackDto.getRemarks(), currentTaskInstance.getAssignee());
+
+            // 完成任务
+            taskService.complete(currentTaskInstance.getId());
+
+            // 恢复原方向
+            currentFlowNode.setOutgoingFlows(sourceSequenceFlowList);
+
+        }
+    }
+
+    /**
      * 获取任务列表
      * @param historicProcessInstances
      * @return
@@ -283,4 +359,19 @@ public class ApprovalServiceImpl implements ApprovalService {
         return taskVos;
     }
 
+    /**
+     * 添加评论
+     * @param taskId
+     * @param processInstanceId
+     * @param remarks
+     * @param assignee
+     */
+    private void addComment(String taskId, String processInstanceId, String remarks, String assignee){
+        if (Objects.nonNull(remarks)){
+            // 需要添加此句否则审批意见表中ACT_HI_COMMENT，审批人的userId是空的
+            Authentication.setAuthenticatedUserId(assignee);
+            // 添加备注
+            taskService.addComment(taskId, processInstanceId, remarks);
+        }
+    }
 }
