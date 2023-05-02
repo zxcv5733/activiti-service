@@ -1,6 +1,7 @@
 package com.joker.service.impl;
 
 import com.joker.dto.*;
+import com.joker.enums.ApproveTypeEnum;
 import com.joker.service.ApprovalService;
 import com.joker.vo.AttachmentVO;
 import com.joker.vo.NodeInfoVO;
@@ -15,6 +16,7 @@ import org.activiti.engine.TaskService;
 import org.activiti.engine.history.HistoricActivityInstance;
 import org.activiti.engine.history.HistoricProcessInstance;
 import org.activiti.engine.history.HistoricTaskInstance;
+import org.activiti.engine.history.HistoricVariableInstance;
 import org.activiti.engine.impl.identity.Authentication;
 import org.activiti.engine.runtime.Execution;
 import org.activiti.engine.task.Attachment;
@@ -62,10 +64,17 @@ public class ApprovalServiceImpl implements ApprovalService {
                 .processInstanceBusinessKey(approvalDto.getBusinessKey())
                 .singleResult();
         log.info("审批人: {} 业务ID: {} 任务: {}", assignee, approvalDto.getBusinessKey(), task);
+        String taskId = task.getId();
         // 添加评论
-        addComment(task.getId(), task.getProcessInstanceId(), approvalDto.getRemarks(), assignee);
+        addComment(taskId, task.getProcessInstanceId(), approvalDto.getRemarks(), assignee);
+
+        Integer state = approvalDto.getState();
+
+        HashMap<String, Object> variables = new HashMap<String, Object>(1) {{
+            put("state", state);
+        }};
         // 点击完成
-        taskService.complete(task.getId());
+        taskService.complete(taskId, variables, true);
     }
 
     /**
@@ -99,23 +108,8 @@ public class ApprovalServiceImpl implements ApprovalService {
      */
     @Override
     public List<NodeInfoVO> timeLine(TimeLineDTO timeLineDto) {
-        // 查询流程图中所有节点
-        BpmnModel bpmnModel = repositoryService.getBpmnModel(timeLineDto.getProcessDefinitionId());
-        Process process = bpmnModel.getProcesses().get(0);
-        List<UserTask> userTasks = process.findFlowElementsOfType(UserTask.class);
-
-
-        // 原始节点
-        List<NodeInfoVO> sourceNodeInfoVos = new ArrayList<>();
-
-        // 获取全部的节点信息
-        for (UserTask userTask : userTasks) {
-            NodeInfoVO nodeInfoVo = NodeInfoVO.builder().assignee(userTask.getAssignee())
-                    .attachments(new ArrayList<>())
-                    .comments(new ArrayList<>())
-                    .status("待审批").build();
-            sourceNodeInfoVos.add(nodeInfoVo);
-        }
+        // 获取原始节点
+        List<NodeInfoVO> sourceNode = getSourceNode(timeLineDto);
 
         // 实际所有节点
         List<NodeInfoVO> nodeInfoVos = new ArrayList<>();
@@ -124,62 +118,134 @@ public class ApprovalServiceImpl implements ApprovalService {
         HistoricProcessInstance historicProcessInstance = historyService.createHistoricProcessInstanceQuery()
                 .processInstanceBusinessKey(timeLineDto.getBusinessKey())
                 .singleResult();
+
         nodeInfoVos.add(NodeInfoVO.builder().startUser(historicProcessInstance.getStartUserId())
                 .startTime(historicProcessInstance.getStartTime()).assignee("").build());
+        // 流程实例ID
+        String processInstanceId = historicProcessInstance.getId();
 
         // 查询历史信息，所有完成的任务都会在历史信息中
-        List<HistoricTaskInstance> historicTaskInstances = historyService.createHistoricTaskInstanceQuery()
-                .processInstanceBusinessKey(timeLineDto.getBusinessKey())
-                .list();
+        List<HistoricActivityInstance> historicActivityInstances = historyService.createHistoricActivityInstanceQuery()
+                .processInstanceId(processInstanceId)
+                .orderByHistoricActivityInstanceStartTime().asc()
+                .list()
+                .stream().filter(m -> "userTask".equals(m.getActivityType()))
+                .collect(Collectors.toList());
 
-        for (HistoricTaskInstance historicTaskInstance : historicTaskInstances) {
-            String assignee = historicTaskInstance.getAssignee();
-            String processInstanceId = historicTaskInstance.getProcessInstanceId();
+        // 取出对应评论表中对应当前人的审批意见
+        Map<String, List<String>> commentMap = getCommentMap(processInstanceId);
 
+        // 查询附件
+        Map<String, List<AttachmentVO>> attachmentMap = getAttachmentMap(processInstanceId);
+
+        // 查询节点变量
+        Map<String, Object> variableMap = historyService.createHistoricVariableInstanceQuery()
+                .processInstanceId(processInstanceId)
+                .list()
+                .stream().filter(m -> Objects.nonNull(m.getTaskId()))
+                .filter(m -> "state".equals(m.getVariableName()))
+                .collect(Collectors.toMap(HistoricVariableInstance::getTaskId, HistoricVariableInstance::getValue));
+
+
+        for (HistoricActivityInstance historicActivityInstance : historicActivityInstances) {
+            String taskId = historicActivityInstance.getTaskId();
             List<String> commentList = new ArrayList<>();
             List<AttachmentVO> attachmentVos = new ArrayList<>();
 
-            // 取出对应评论表中对应当前人的审批意见
-            List<Comment> comments = taskService.getProcessInstanceComments(processInstanceId).stream()
-                    .filter(m -> "comment".equals(m.getType()))
-                    .filter(m -> Objects.nonNull(m.getUserId()))
-                    .filter(m -> m.getUserId().equals(assignee)).collect(Collectors.toList());
-            if (comments.size() != 0){
-                commentList = comments.stream().map(Comment::getFullMessage).collect(Collectors.toList());
-            }
-            // 查询附件
-            List<Attachment> attachments = taskService.getProcessInstanceAttachments(processInstanceId);
-
-            if (attachments.size() != 0){
-                for (Attachment attachment : attachments) {
-                    if (Objects.nonNull(attachment.getUserId()) && attachment.getUserId().equals(assignee)){
-                        AttachmentVO attachmentVo = AttachmentVO.builder().attachmentName(attachment.getName())
-                                .attachmentDescription(attachment.getDescription())
-                                .url(attachment.getUrl()).build();
-                        attachmentVos.add(attachmentVo);
-                    }
+            // 判断当前节点中是否有评论信息
+            if (Objects.nonNull(commentMap)){
+                List<String> resultList = commentMap.get(taskId);
+                if (Objects.nonNull(resultList)){
+                    commentList = resultList;
                 }
             }
-            Date endTime = historicTaskInstance.getEndTime();
-            String status = "待审批";
-            if (Objects.nonNull(endTime)){
-                status = "已审批";
+
+            // 判断当前节点中是否有上传附件
+            if (Objects.nonNull(attachmentMap)){
+                List<AttachmentVO> attachmentList = attachmentMap.get(taskId);
+                if (Objects.nonNull(attachmentList)){
+                    attachmentVos = attachmentList;
+                }
             }
 
-            NodeInfoVO nodeInfoVo = NodeInfoVO.builder().assignee(assignee)
+            // 判断当前节点中变量状态
+            Integer state = (int)variableMap.get(taskId);
+            Date endTime = historicActivityInstance.getEndTime();
+            if (Objects.isNull(endTime) && ApproveTypeEnum.REJECT.getKey().equals(state)){
+                state = ApproveTypeEnum.AWAIT_APPROVAL.getKey();
+            }
+
+            NodeInfoVO nodeInfoVo = NodeInfoVO.builder().assignee(historicActivityInstance.getAssignee())
                     .comments(commentList)
                     .attachments(attachmentVos)
-                    .startTime(historicTaskInstance.getStartTime())
-                    .endTime(endTime).status(status).build();
+                    .startTime(historicActivityInstance.getStartTime())
+                    .endTime(endTime).state(state).build();
             log.info("节点: {}",nodeInfoVo);
+            nodeInfoVos.add(nodeInfoVo);
 
-            // 判断全部节点中是否有当前节点，有则添加
-            Optional<NodeInfoVO> optional = sourceNodeInfoVos.stream().filter(m -> m.getAssignee().equals(assignee)).findFirst();
-            if (optional.isPresent()){
-                nodeInfoVos.add(nodeInfoVo);
-            }
         }
         return nodeInfoVos;
+    }
+
+    /**
+     * 获取原始节点
+     * @param timeLineDto
+     * @return
+     */
+    private List<NodeInfoVO> getSourceNode(TimeLineDTO timeLineDto) {
+        // 查询流程图中所有节点
+        BpmnModel bpmnModel = repositoryService.getBpmnModel(timeLineDto.getProcessDefinitionId());
+        Process process = bpmnModel.getProcesses().get(0);
+        List<UserTask> userTasks = process.findFlowElementsOfType(UserTask.class);
+
+
+        // 原始节点
+        List<NodeInfoVO> nodeInfoVos = new ArrayList<>();
+
+        // 获取全部的节点信息
+        for (UserTask userTask : userTasks) {
+            NodeInfoVO nodeInfoVo = NodeInfoVO.builder().assignee(userTask.getAssignee())
+                    .attachments(new ArrayList<>())
+                    .comments(new ArrayList<>())
+                    .state(ApproveTypeEnum.AWAIT_APPROVAL.getKey()).build();
+            nodeInfoVos.add(nodeInfoVo);
+        }
+        return nodeInfoVos;
+    }
+
+    /**
+     * 获取评论
+     * @param processInstanceId
+     * @return
+     */
+    private Map<String, List<String>> getCommentMap(String processInstanceId) {
+        List<Comment> comments = taskService.getProcessInstanceComments(processInstanceId, "comment").stream()
+                .filter(m -> Objects.nonNull(m.getUserId())).collect(Collectors.toList());
+        Map<String, List<String>> commentMap = null;
+        if (comments.size() != 0){
+            commentMap = comments.stream().collect(Collectors.groupingBy(Comment::getTaskId,
+                    Collectors.collectingAndThen(Collectors.toList(), m -> m.stream().map(Comment::getFullMessage).collect(Collectors.toList()))));
+        }
+        return commentMap;
+    }
+
+    /**
+     * 获取附件
+     * @param processInstanceId
+     * @return
+     */
+    private Map<String, List<AttachmentVO>> getAttachmentMap(String processInstanceId) {
+        List<Attachment> attachments = taskService.getProcessInstanceAttachments(processInstanceId).stream()
+                .filter(m -> Objects.nonNull(m.getUserId())).collect(Collectors.toList());
+        Map<String, List<AttachmentVO>> attachmentMap = null;
+        if (attachments.size() != 0){
+            attachmentMap = attachments.stream().collect(Collectors.groupingBy(Attachment::getTaskId,
+                    Collectors.collectingAndThen(Collectors.toList(),
+                            m -> m.stream().map(attachment -> AttachmentVO.builder().attachmentName(attachment.getName())
+                            .attachmentDescription(attachment.getDescription())
+                            .url(attachment.getUrl()).build()).collect(Collectors.toList()))));
+        }
+        return attachmentMap;
     }
 
     /**

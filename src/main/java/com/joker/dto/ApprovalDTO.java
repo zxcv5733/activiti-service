@@ -29,4 +29,9 @@ public class ApprovalDTO implements Serializable {
      * 评审备注
      */
     private String remarks;
+
+    /**
+     * 审批状态
+     */
+    private Integer state;
 }

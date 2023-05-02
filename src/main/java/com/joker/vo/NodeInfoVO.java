@@ -53,5 +53,5 @@ public class NodeInfoVO implements Serializable {
     /**
      * 审批状态
      */
-    private String status;
+    private Integer state;
 }
