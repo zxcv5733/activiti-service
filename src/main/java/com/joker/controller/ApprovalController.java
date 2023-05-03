@@ -3,6 +3,7 @@ package com.joker.controller;
 import com.joker.dto.*;
 import com.joker.service.ApprovalService;
 import com.joker.vo.NodeInfoVO;
+import com.joker.vo.RejectNodeVO;
 import com.joker.vo.TaskVO;
 import org.springframework.web.bind.annotation.*;
 
@@ -86,11 +87,28 @@ public class ApprovalController {
     }
 
     /**
-     * 驳回
+     * 驳回上一节点
      * @return
      */
-    @PostMapping("/reject")
-    public void reject(@RequestBody RollbackDTO rollbackDto){
-        approvalService.reject(rollbackDto);
+    @PostMapping("/rejectBeforeNode")
+    public void rejectBeforeNode(@RequestBody RollbackDTO rollbackDto){
+        approvalService.rejectBeforeNode(rollbackDto);
+    }
+
+    /**
+     * 驳回节点列表
+     */
+    @GetMapping("/rejectNodeList/{businessKey}")
+    public List<RejectNodeVO> rejectNodeList(@PathVariable String businessKey){
+        return approvalService.rejectNodeList(businessKey);
+    }
+
+    /**
+     * 驳回任意节点
+     * @param rejectAnyNodeDto
+     */
+    @PostMapping("/rejectAnyNode")
+    public void rejectAnyNode(@RequestBody RejectAnyNodeDTO rejectAnyNodeDto){
+        approvalService.rejectAnyNode(rejectAnyNodeDto);
     }
 }

@@ -1,10 +1,12 @@
 package com.joker.service.impl;
 
+import cn.hutool.core.util.IdUtil;
 import com.joker.dto.*;
 import com.joker.enums.ApproveTypeEnum;
 import com.joker.service.ApprovalService;
 import com.joker.vo.AttachmentVO;
 import com.joker.vo.NodeInfoVO;
+import com.joker.vo.RejectNodeVO;
 import com.joker.vo.TaskVO;
 import lombok.extern.slf4j.Slf4j;
 import org.activiti.bpmn.model.*;
@@ -69,13 +71,11 @@ public class ApprovalServiceImpl implements ApprovalService {
         addComment(taskId, task.getProcessInstanceId(), approvalDto.getRemarks(), assignee);
 
         Integer state = approvalDto.getState();
-
-        HashMap<String, Object> variables = new HashMap<String, Object>(1) {{
-            put("state", state);
-        }};
-        // 点击完成
-        taskService.complete(taskId, variables, true);
+        // 完成任务
+        taskComplete(taskId, state);
     }
+
+
 
     /**
      * 查询代办的任务
@@ -108,9 +108,6 @@ public class ApprovalServiceImpl implements ApprovalService {
      */
     @Override
     public List<NodeInfoVO> timeLine(TimeLineDTO timeLineDto) {
-        // 获取原始节点
-        List<NodeInfoVO> sourceNode = getSourceNode(timeLineDto);
-
         // 实际所有节点
         List<NodeInfoVO> nodeInfoVos = new ArrayList<>();
 
@@ -169,9 +166,12 @@ public class ApprovalServiceImpl implements ApprovalService {
             }
 
             // 判断当前节点中变量状态
-            Integer state = (int)variableMap.get(taskId);
+            Integer state = ApproveTypeEnum.AWAIT_APPROVAL.getKey();
+            if (variableMap.size() != 0){
+                state = (int)variableMap.get(taskId);
+            }
             Date endTime = historicActivityInstance.getEndTime();
-            if (Objects.isNull(endTime) && ApproveTypeEnum.REJECT.getKey().equals(state)){
+            if (Objects.isNull(endTime)){
                 state = ApproveTypeEnum.AWAIT_APPROVAL.getKey();
             }
 
@@ -184,6 +184,19 @@ public class ApprovalServiceImpl implements ApprovalService {
             nodeInfoVos.add(nodeInfoVo);
 
         }
+
+        // 获取原始节点
+        List<NodeInfoVO> sourceNode = getSourceNode(timeLineDto);
+
+        // 取集合的差集，求出全量的节点
+        Map<String, NodeInfoVO> sourceMap = sourceNode.stream().collect(Collectors.toMap(NodeInfoVO::getAssignee, m -> m));
+        for (String s : sourceMap.keySet()) {
+            long count = nodeInfoVos.stream().filter(m -> m.getAssignee().equals(s)).count();
+            if (count == 0){
+                nodeInfoVos.add(sourceMap.get(s));
+            }
+        }
+
         return nodeInfoVos;
     }
 
@@ -329,17 +342,100 @@ public class ApprovalServiceImpl implements ApprovalService {
     }
 
     /**
-     * 驳回流程
+     * 驳回的节点列表
+     * @param businessKey
+     * @return
+     */
+    @Override
+    public List<RejectNodeVO> rejectNodeList(String businessKey) {
+        // 取出当前节点信息
+        HistoricTaskInstance historicTaskInstance = historyService.createHistoricTaskInstanceQuery()
+                .processInstanceBusinessKey(businessKey)
+                .orderByHistoricTaskInstanceStartTime()
+                .desc()
+                .list()
+                .get(0);
+
+        String assignee = historicTaskInstance.getAssignee();
+
+        // 获取节点为userTask类型的数据
+        List<HistoricActivityInstance> historicActivityInstances = historyService.createHistoricActivityInstanceQuery()
+                .executionId(historicTaskInstance.getExecutionId())
+                .activityType("userTask")
+                .finished()
+                .list();
+
+        // 数据转换
+        List<RejectNodeVO> rejectNodeVos = new ArrayList<>();
+        for (HistoricActivityInstance historicActivityInstance : historicActivityInstances) {
+            // 获取当前节点之前的审批人信息
+            if (assignee.equals(historicActivityInstance.getAssignee())){
+                break;
+            }
+            RejectNodeVO rejectNodeVO = RejectNodeVO.builder()
+                    .assignee(historicActivityInstance.getAssignee())
+                    .taskId(historicActivityInstance.getTaskId())
+                    .executionId(historicActivityInstance.getExecutionId())
+                    .processDefinitionId(historicActivityInstance.getProcessDefinitionId()).build();
+            rejectNodeVos.add(rejectNodeVO);
+        }
+
+        return rejectNodeVos;
+
+    }
+
+    /**
+     * 驳回到任务节点
+     *
+     * @param rejectAnyNodeDto
+     * @return
+     */
+    @Override
+    public void rejectAnyNode(RejectAnyNodeDTO rejectAnyNodeDto) {
+        List<HistoricTaskInstance> historicTaskInstances = getHistoricTaskInstances(rejectAnyNodeDto.getBusinessKey());
+
+        Integer size = 2;
+
+        if (Objects.isNull(historicTaskInstances) || historicTaskInstances.size() < size) {
+            return;
+        }
+
+        // 当前任务实例
+        HistoricTaskInstance currentTaskInstance = historicTaskInstances.get(0);
+
+        BpmnModel bpmnModel = repositoryService.getBpmnModel(rejectAnyNodeDto.getProcessDefinitionId());
+
+        String beforeActivityId = null;
+        // 得到ActivityId，只有HistoricActivityInstance对象里才有此方法
+        Optional<String> optional = historyService.createHistoricActivityInstanceQuery()
+                .activityType("userTask")
+                .executionId(rejectAnyNodeDto.getExecutionId()).finished().list()
+                .stream().filter(m -> m.getTaskId().equals(rejectAnyNodeDto.getTaskId()))
+                .map(HistoricActivityInstance::getActivityId).findFirst();
+
+        if (optional.isPresent()){
+            beforeActivityId = optional.get();
+        }
+        // 版本回退
+        rollback(rejectAnyNodeDto.getRemarks(), currentTaskInstance, bpmnModel, beforeActivityId);
+    }
+
+    private List<HistoricTaskInstance> getHistoricTaskInstances(String businessKey) {
+        return historyService.createHistoricTaskInstanceQuery()
+                    .processInstanceBusinessKey(businessKey)
+                    .orderByHistoricTaskInstanceStartTime()
+                    .desc()
+                    .list();
+    }
+
+    /**
+     * 驳回到上一个节点
      *
      * @param rollbackDto
      */
     @Override
-    public void reject(RollbackDTO rollbackDto) {
-        List<HistoricTaskInstance> historicTaskInstances = historyService.createHistoricTaskInstanceQuery()
-                .processInstanceBusinessKey(rollbackDto.getBusinessKey())
-                .orderByHistoricTaskInstanceStartTime()
-                .desc()
-                .list();
+    public void rejectBeforeNode(RollbackDTO rollbackDto) {
+        List<HistoricTaskInstance> historicTaskInstances = getHistoricTaskInstances(rollbackDto.getBusinessKey());
 
         Integer size = 2;
 
@@ -367,7 +463,18 @@ public class ApprovalServiceImpl implements ApprovalService {
         if (optional.isPresent()){
             beforeActivityId = optional.get();
         }
+        // 版本回退
+        rollback(rollbackDto.getRemarks(), currentTaskInstance, bpmnModel, beforeActivityId);
+    }
 
+    /**
+     * 进行节点回退
+     * @param remarks
+     * @param currentTaskInstance
+     * @param bpmnModel
+     * @param beforeActivityId
+     */
+    private void rollback(String remarks, HistoricTaskInstance currentTaskInstance, BpmnModel bpmnModel, String beforeActivityId) {
         if (Objects.nonNull(beforeActivityId)){
             // 得到上个节点的信息
             FlowNode beforeFlowNode = (FlowNode) bpmnModel.getMainProcess().getFlowElement(beforeActivityId);
@@ -385,23 +492,24 @@ public class ApprovalServiceImpl implements ApprovalService {
             // 建立新方向
             List<SequenceFlow> newSequenceFlowList = new ArrayList<>();
             SequenceFlow newSequenceFlow = new SequenceFlow();
-            newSequenceFlow.setId("flow4");
+            newSequenceFlow.setId(IdUtil.simpleUUID());
             newSequenceFlow.setSourceFlowElement(currentFlowNode);
             newSequenceFlow.setTargetFlowElement(beforeFlowNode);
             newSequenceFlowList.add(newSequenceFlow);
             currentFlowNode.setOutgoingFlows(newSequenceFlowList);
 
             // 添加评论
-            addComment(currentTaskInstance.getId(), currentTaskInstance.getProcessInstanceId(), rollbackDto.getRemarks(), currentTaskInstance.getAssignee());
+            addComment(currentTaskInstance.getId(), currentTaskInstance.getProcessInstanceId(), remarks, currentTaskInstance.getAssignee());
 
             // 完成任务
-            taskService.complete(currentTaskInstance.getId());
+            taskComplete(currentTaskInstance.getId(), ApproveTypeEnum.REJECT.getKey());
 
             // 恢复原方向
             currentFlowNode.setOutgoingFlows(sourceSequenceFlowList);
 
         }
     }
+
 
     /**
      * 获取任务列表
@@ -439,5 +547,18 @@ public class ApprovalServiceImpl implements ApprovalService {
             // 添加备注
             taskService.addComment(taskId, processInstanceId, remarks);
         }
+    }
+
+    /**
+     * 完成任务
+     * @param taskId
+     * @param state
+     */
+    private void taskComplete(String taskId, Integer state) {
+        HashMap<String, Object> variables = new HashMap<String, Object>(1) {{
+            put("state", state);
+        }};
+        // 点击完成
+        taskService.complete(taskId, variables, true);
     }
 }

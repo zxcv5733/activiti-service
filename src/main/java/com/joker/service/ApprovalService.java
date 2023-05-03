@@ -2,6 +2,7 @@ package com.joker.service;
 
 import com.joker.dto.*;
 import com.joker.vo.NodeInfoVO;
+import com.joker.vo.RejectNodeVO;
 import com.joker.vo.TaskVO;
 import java.util.List;
 
@@ -59,8 +60,21 @@ public interface ApprovalService {
     List<TaskVO> initiatedTask(InitiatedTaskDTO initiatedTaskDto);
 
     /**
-     * 驳回流程
+     * 驳回的节点列表
+     * @param businessKey
+     * @return
+     */
+    List<RejectNodeVO> rejectNodeList(String businessKey);
+
+    /**
+     * 驳回到任务节点
+     * @param rejectAnyNodeDto
+     */
+    void rejectAnyNode(RejectAnyNodeDTO rejectAnyNodeDto);
+
+    /**
+     * 驳回到上一个节点
      * @param rollbackDto
      */
-    void reject(RollbackDTO rollbackDto);
+    void rejectBeforeNode(RollbackDTO rollbackDto);
 }

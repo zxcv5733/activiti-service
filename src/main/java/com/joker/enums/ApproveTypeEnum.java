@@ -19,7 +19,13 @@ public enum ApproveTypeEnum {
     /**
      * 拒绝
      */
-    REJECT(0, "审批不通过");
+    REFUSE(0, "审批不通过"),
+
+    /**
+     * 驳回
+     */
+    REJECT(2, "驳回");
+
 
     private Integer key;
 
